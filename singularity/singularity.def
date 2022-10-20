@@ -1,0 +1,120 @@
+Bootstrap: library
+From: airl_lab/default/airl_env:bare_42241e39
+
+# base image has sferes, robot_dart on Ubuntu20.04
+
+%labels
+    Author lc1021@ic.ac.uk
+    Version v0.0.1
+
+%files
+
+
+%environment
+   export PYTHONPATH=$PYTHONPATH:/workspace/lib/python3.8/site-packages/
+   export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+   
+%post
+
+   
+   apt-get update -y
+   apt-get upgrade -y
+
+   apt-get install -y cmake xvfb python3-tk ffmpeg emacs python3-all-dev
+   apt install -y python3-pip git libboost-dev libboost-all-dev build-essential
+   apt-get install -y libjpeg-dev zlib1g-dev
+   pip3 install numpy matplotlib seaborn pandas imageio sklearn scipy graphviz
+   pip3 install pybullet gym
+   pip3 install opensimplex==0.3
+   pip3 install torch torchvision
+
+   # for world models
+   pip3 install cma argparse
+
+   # For A1
+   cd /git
+   git clone https://github.com/yxyang/locomotion_simulation.git   
+   cd /git/locomotion_simulation
+   pip3 install -U pip
+   pip3 install -r requirements.txt
+
+   # Build LCM
+   apt-get install -y libglib2.0-dev
+   cd /git
+   git clone https://github.com/lcm-proj/lcm.git
+   cd lcm
+   #git checkout v1.4.0
+   mkdir build
+   cd build
+   cmake ..
+   make
+   make install
+   
+   # Build Unitree SDK and python bindings
+   cd /git/locomotion_simulation/
+   cd third_party/unitree_legged_sdk
+   mkdir build
+   cd build
+   cmake ..
+   make
+   cp robot_interface.* /git/locomotion_simulation
+   cd /git/locomotion_simulation/
+   mkdir qd_pmtg
+   
+   #==================================================================================
+   exit 0 #NOTFORFINAL - the lines below this "exit" will be executed only when building the final image
+   #==================================================================================
+
+   #CLONEHERE
+   echo "cloning qd_pmtg repository"
+   cd /git/locomotion_simulation/
+   git clone --recurse-submodules https://gitlab.doc.ic.ac.uk/AIRL/students_projects/2021-2022/lisa_coiffard/qd_pmtg.git
+   
+%runscript
+
+    ############# Starting a VNC server ##################
+    # Sleep random duration between 0 and 90 seconds, to prevent 2 vnc-servers from starting at the same time on the same host.
+    bash -c 'sleep $[ ( $RANDOM % 90 ) + 1 ]s'\
+
+    # Updating the HOME folder for the container, where the .Xauthority file will be created.
+    # That solution works iff the appropriate binding is performed (this is done automatically in gitlab-notebook jobs)
+    export HOME=/tmp/home
+    mkdir $HOME
+    D=$(/opt/TurboVNC/bin/vncserver 2>&1 | grep "Desktop" | awk '{print $3}' | sed 's/.*://g')
+    export DISPLAY=':'$D
+
+    ################# Creating results folder ########################
+    CURPATH=$(pwd)
+    #cd /git/flex-qd/
+    cd /git/locomotion_simulation/qd_pmtg
+    DIRNAME=results
+    PATHNAME=$(date +%Y-%m-%d_%H_%M_%S)_$$
+
+    # Create a random direcotry name where XXX will be replaced with random characters
+    mkdir -p $CURPATH/$DIRNAME/
+    tmp_dir=$(mktemp -d -p $CURPATH/$DIRNAME/ ${PATHNAME}_XXX)
+    mkdir -p $tmp_dir
+    echo tmp_dir is $tmp_dir
+
+    ####################### Run program ####################    
+    cd /git/locomotion_simulation/qd_pmtg
+
+    # Generate a collection of TGs using MAP-Elites algorithm
+    #python trajectory_generator_qd.py --logdir=$tmp_dir
+
+    # Train a random TG from the archive on flat terrain over 3 replications
+    #python train_flat_terrain.py --archive=archive_400000.dat --logdir=$tmp_dir
+    # Train a policy to select TGs from the archive on flat terrain over 3 replications
+    #python train_flat_terrain.py --archive=archive_400000.dat --tg_select=1 --logdir=$tmp_dir
+
+    # Finetune a policy to modulate a random TG from the archive on random terrains over 3 replications
+    #python train_domain_randomisation.py --archive=archive_400000.dat --policy=policies/specialist_flat.npz --logdir=$tmp_dir
+    # Finetune a policy to select TGs from the archive on random terrains over 3 replications
+    #python train_domain_randomisation.py --archive=archive_400000.dat --tg_select=1 --policy=policies/generalist_flat.npz --logdir=$tmp_dir
+    # Train from scratch a policy to modulate a random TG from the archive on random terrains over 3 replications
+    #python train_domain_randomisation_deep.py --archive=archive_400000.dat --logdir=$tmp_dir
+    # Train from scratch a policy to select TGs from the archive on random terrains over 3 replications
+    #python train_domain_randomisation_deep.py --archive=archive_400000.dat --tg_select=1 --logdir=$tmp_dir
+
+%help
+    Launch training for experiments produced as part of Deep Reinforcement Learning for Dynamic Robot Locomotion project
